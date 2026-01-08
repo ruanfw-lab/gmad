@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparador GMAD (Perfil vs Ponteira)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0fdf4; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f0fdf4; }
+        ::-webkit-scrollbar-thumb { background: #86efac; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #22c55e; }
+        
+        .drag-active { border-color: #10b981 !important; background-color: #ecfdf5 !important; }
+        
+        /* Cores de Status */
+        .status-exact { background-color: #d1fae5; color: #065f46; border: 1px solid #34d399; } /* Verde */
+        .status-high { background-color: #fff7ed; color: #9a3412; border: 1px solid #fdba74; } /* Laranja */
+        .status-unique { background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; } /* Cinza */
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-emerald-900 text-white shadow-lg z-10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-emerald-800 p-2 rounded-lg border border-emerald-700">
+                    <i class="fa-solid fa-code-compare text-emerald-300 text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-wide text-emerald-50">Comparador GMAD</h1>
+                    <p class="text-[10px] text-emerald-300 uppercase tracking-widest">Madville vs Curitiba (IA v7 - Puxadores)</p>
+                </div>
+            </div>
+            <button onclick="exportResults()" id="btnExport" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white text-sm py-2 px-4 rounded shadow transition flex items-center gap-2">
+                <i class="fa-solid fa-download"></i> Exportar Relatório
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar Controls -->
+        <aside class="w-80 bg-white border-r border-emerald-100 flex flex-col shadow-sm z-20 overflow-y-auto">
+            <div class="p-6 flex flex-col gap-6">
+                
+                <!-- Upload A -->
+                <div class="space-y-2">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-emerald-600"></i> Arquivo 1 (Madville)
+                    </h3>
+                    <div id="dropZoneA" class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer transition hover:bg-slate-50" onclick="document.getElementById('fileA').click()">
+                        <input type="file" id="fileA" class="hidden" accept=".xlsx, .xls, .csv">
+                        <div id="statusA">
+                            <p class="text-xs text-slate-400">Clique para carregar</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload B -->
+                <div class="space-y-2">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-blue-600"></i> Arquivo 2 (Curitiba)
+                    </h3>
+                    <div id="dropZoneB" class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer transition hover:bg-slate-50" onclick="document.getElementById('fileB').click()">
+                        <input type="file" id="fileB" class="hidden" accept=".xlsx, .xls, .csv">
+                        <div id="statusB">
+                            <p class="text-xs text-slate-400">Clique para carregar</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="border-t border-slate-100 pt-6">
+                    <label class="block text-xs font-bold text-slate-500 mb-2">Sensibilidade da IA (%)</label>
+                    <input type="range" id="similarityRange" min="30" max="100" value="65" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600">
+                    <div class="flex justify-between text-xs text-slate-400 mt-1">
+                        <span>Mais Resultados</span>
+                        <span id="rangeValue">65%</span>
+                        <span>Mais Preciso</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-2 italic">Diferencia Perfil de Tampa/Ponteira.</p>
+                </div>
+
+                <button onclick="processComparison()" id="btnCompare" disabled class="w-full bg-slate-200 text-slate-400 font-bold py-3 rounded-lg shadow-sm transition cursor-not-allowed flex justify-center items-center gap-2">
+                    <i class="fa-solid fa-play"></i> Comparar Cadastros
+                </button>
+
+                <!-- Stats -->
+                <div id="statsBox" class="hidden bg-emerald-50 rounded-lg p-4 text-xs space-y-2 border border-emerald-100">
+                    <div class="flex justify-between"><span>Correspondência Exata:</span> <strong class="text-emerald-700" id="statExact">0</strong></div>
+                    <div class="flex justify-between"><span>Provável (IA):</span> <strong class="text-orange-600" id="statProbable">0</strong></div>
+                    <div class="flex justify-between"><span>Sem Par (Únicos):</span> <strong class="text-slate-600" id="statUnique">0</strong></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content (Results) -->
+        <main class="flex-1 bg-slate-50 flex flex-col relative">
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-0">
+                <i class="fa-solid fa-arrows-left-right-to-line text-6xl mb-4 opacity-20"></i>
+                <p class="text-lg font-medium">Carregue as duas tabelas para começar</p>
+                <p class="text-sm opacity-60">O sistema trata Tampa como Ponteira</p>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mb-4"></div>
+                <p class="text-emerald-800 font-bold animate-pulse">Cruzando dados...</p>
+                <p class="text-xs text-slate-500 mt-2">Aplicando regras de segurança (Puxadores, Pistões)</p>
+            </div>
+
+            <!-- Results Table -->
+            <div id="resultsContainer" class="hidden flex-1 overflow-auto p-6 z-10">
+                <table class="w-full border-collapse bg-white shadow-sm rounded-lg overflow-hidden text-sm">
+                    <thead class="bg-slate-100 text-slate-500 uppercase text-xs font-bold sticky top-0 shadow-sm">
+                        <tr>
+                            <th class="px-4 py-3 text-center w-24">Status</th>
+                            <th class="px-4 py-3 text-left w-1/3 text-emerald-800 border-r border-slate-200">Produto Madville</th>
+                            <th class="px-4 py-3 text-left w-1/3 text-blue-800">Produto Curitiba</th>
+                            <th class="px-4 py-3 text-center">Score</th>
+                            <th class="px-4 py-3 text-right">Preço A</th>
+                            <th class="px-4 py-3 text-right">Preço B</th>
+                            <th class="px-4 py-3 text-center">Dif %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody" class="divide-y divide-slate-100">
+                        <!-- Rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        let fileAData = null;
+        let fileBData = null;
+        let comparisonResults = [];
+
+        // DOM Elements
+        const dropZoneA = document.getElementById('dropZoneA');
+        const dropZoneB = document.getElementById('dropZoneB');
+        const fileAInput = document.getElementById('fileA');
+        const fileBInput = document.getElementById('fileB');
+        const btnCompare = document.getElementById('btnCompare');
+        const similarityRange = document.getElementById('similarityRange');
+        const rangeValue = document.getElementById('rangeValue');
+        
+        // --- 1. File Handling ---
+        function handleFile(file, side) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const sheetName = workbook.SheetNames[0];
+                const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+                
+                if (side === 'A') {
+                    fileAData = json;
+                    document.getElementById('statusA').innerHTML = `<p class="text-emerald-600 font-bold">${file.name}</p><p class="text-xs text-slate-500">${json.length} linhas</p>`;
+                    dropZoneA.classList.add('bg-emerald-50', 'border-emerald-300');
+                } else {
+                    fileBData = json;
+                    document.getElementById('statusB').innerHTML = `<p class="text-blue-600 font-bold">${file.name}</p><p class="text-xs text-slate-500">${json.length} linhas</p>`;
+                    dropZoneB.classList.add('bg-blue-50', 'border-blue-300');
+                }
+                checkReady();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        fileAInput.addEventListener('change', (e) => handleFile(e.target.files[0], 'A'));
+        fileBInput.addEventListener('change', (e) => handleFile(e.target.files[0], 'B'));
+
+        function checkReady() {
+            if (fileAData && fileBData) {
+                btnCompare.disabled = false;
+                btnCompare.classList.remove('bg-slate-200', 'text-slate-400', 'cursor-not-allowed');
+                btnCompare.classList.add('bg-emerald-600', 'text-white', 'hover:bg-emerald-500');
+            }
+        }
+
+        similarityRange.addEventListener('input', (e) => {
+            rangeValue.textContent = e.target.value + '%';
+        });
+
+        // --- 2. INTELLIGENCE LOGIC (SYNONYMS) ---
+
+        const SYNONYMS = [
+            // Puxadores (Novo)
+            { key: 'PUX', value: 'PUXADOR' },
+            { key: 'PUXAD', value: 'PUXADOR' },
+            { key: 'TAMPA', value: 'PONTEIRA' },
+            { key: 'TPA', value: 'PONTEIRA' },
+            { key: 'PONT', value: 'PONTEIRA' },
+            { key: 'ACAB', value: 'PONTEIRA' }, // As vezes acabamento é ponteira
+            
+            // Corrediças
+            { key: 'CORR', value: 'CORREDICA' },
+            { key: 'CORRED', value: 'CORREDICA' },
+            { key: 'CORRE', value: 'CORREDICA' },
+            { key: 'COR', value: 'CORREDICA' },
+            { key: 'CORREDIÇA', value: 'CORREDICA' },
+            
+            // Tipos
+            { key: 'TELESC', value: 'TELESCOPICA' },
+            { key: 'TEL', value: 'TELESCOPICA' },
+            { key: 'TELE', value: 'TELESCOPICA' },
+            { key: 'TN', value: 'TELESCOPICA' }, 
+            { key: 'TT', value: 'TELESCOPICA' },
+            { key: 'H45', value: 'TELESCOPICA' },
+            { key: 'LARG', value: 'LARGA' },
+            
+            // Oculta / Invisível
+            { key: 'INVISIVEL', value: 'OCULTA' },
+            { key: 'INV', value: 'OCULTA' },
+            { key: 'INVIS', value: 'OCULTA' },
+            { key: 'OCULT', value: 'OCULTA' },
+            
+            // Slow / Touch
+            { key: 'SLOW', value: 'AMORTECEDOR' },
+            { key: 'SOFT', value: 'AMORTECEDOR' },
+            { key: 'CLOSING', value: 'AMORTECEDOR' }, 
+            { key: 'AMORT', value: 'AMORTECEDOR' },
+            { key: 'TOUCH', value: 'TOQUE' },
+            { key: 'TIP', value: 'TOQUE' }, 
+            { key: 'PUSH', value: 'TOQUE' }, 
+            { key: 'PULSO', value: 'TOQUE' },
+            
+            // Dobradiças
+            { key: 'DOBR', value: 'DOBRADICA' },
+            { key: 'DOBRAD', value: 'DOBRADICA' },
+            { key: 'DOB', value: 'DOBRADICA' },
+            { key: 'DOBRADIÇA', value: 'DOBRADICA' },
+            
+            // Acessórios / Outros
+            { key: 'DESEM', value: 'DESEMPENADOR' },
+            { key: 'SUP', value: 'SUPORTE' },
+            { key: 'PRAT', value: 'PRATELEIRA' },
+            { key: 'PARAF', value: 'PARAFUSO' },
+            { key: 'MDF', value: '' }, 
+            { key: 'CH', value: '' },
+            { key: 'MM', value: '' },
+            { key: 'ZIN', value: 'ZINCADO' },
+            { key: 'BC', value: 'BRANCO' },
+            { key: 'BCO', value: 'BRANCO' },
+            { key: 'PT', value: 'PRETO' },
+            { key: 'PTO', value: 'PRETO' },
+            { key: 'C/', value: 'COM' },
+            { key: 'S/', value: 'SEM' },
+            { key: 'ET', value: '' }, 
+            { key: 'KG', value: '' }, 
+            { key: 'PAR', value: '' },
+            { key: 'PISTAO', value: 'PISTAO' }, 
+            { key: 'GAS', value: 'GAS' }
+        ];
+
+        function normalizeUnits(str) {
+            return str.replace(/(\d+)(?:[\s\.]?)CM\b/gi, (match, p1) => {
+                return (parseInt(p1) * 10) + "MM";
+            });
+        }
+
+        function normalizeString(str) {
+            if (!str) return "";
+            let s = str.toString().toUpperCase();
+            
+            s = normalizeUnits(s);
+            s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            s = s.replace(/[^A-Z0-9\s]/g, ' '); 
+            
+            const words = s.split(/\s+/).filter(w => w.length > 0);
+            
+            const normalizedWords = words.map(w => {
+                let cleanWord = w;
+                if (cleanWord.length > 3 && cleanWord.endsWith('S') && cleanWord !== 'GAS') { 
+                    cleanWord = cleanWord.slice(0, -1);
+                }
+                const match = SYNONYMS.find(syn => syn.key === cleanWord);
+                return match ? match.value : cleanWord;
+            });
+            
+            const uniqueWords = [...new Set(normalizedWords.filter(w => w.length > 0))];
+            uniqueWords.sort();
+
+            return uniqueWords.join(' ');
+        }
+
+        function extractNumbers(str) {
+            const matches = str.match(/\d+/g);
+            return matches ? matches.sort().join(',') : '';
+        }
+
+        // Dice Coefficient
+        function getSimilarity(s1, s2) {
+            const norm1 = normalizeString(s1);
+            const norm2 = normalizeString(s2);
+            
+            // --- REGRA 1: PISTÕES FI vs FN ---
+            if (norm1.includes("PISTAO") && norm2.includes("PISTAO")) {
+                const hasFI1 = /\bFI\b/.test(norm1);
+                const hasFN1 = /\bFN\b/.test(norm1);
+                const hasFI2 = /\bFI\b/.test(norm2);
+                const hasFN2 = /\bFN\b/.test(norm2);
+
+                if ((hasFI1 && hasFN2) || (hasFN1 && hasFI2)) {
+                    return 0.1;
+                }
+            }
+
+            // --- REGRA 2: PERFIL vs PONTEIRA (PUXADOR) ---
+            // Se ambos tem PUXADOR (PUX), mas um é PERFIL e o outro PONTEIRA (TAMPA), penaliza.
+            if (norm1.includes("PUXADOR") && norm2.includes("PUXADOR")) {
+                const hasPerfil1 = norm1.includes("PERFIL");
+                const hasPonteira1 = norm1.includes("PONTEIRA"); // TAMPA vira PONTEIRA no normalize
+                
+                const hasPerfil2 = norm2.includes("PERFIL");
+                const hasPonteira2 = norm2.includes("PONTEIRA");
+
+                // Se um tem PERFIL e o outro PONTEIRA, penaliza forte
+                if ((hasPerfil1 && hasPonteira2) || (hasPonteira1 && hasPerfil2)) {
+                    return 0.1;
+                }
+            }
+
+            // Checagem Numérica
+            const nums1 = extractNumbers(norm1);
+            const nums2 = extractNumbers(norm2);
+            const set1 = nums1.split(',').filter(n => n);
+            const set2 = nums2.split(',').filter(n => n);
+            
+            let numMatch = false;
+            if (set1.length === 0 && set2.length === 0) numMatch = true;
+            else {
+                const smaller = set1.length < set2.length ? set1 : set2;
+                const larger = set1.length < set2.length ? set2 : set1;
+                const intersection = smaller.filter(x => larger.includes(x));
+                if (intersection.length > 0) numMatch = true;
+            }
+
+            if (!numMatch && (set1.length > 0 || set2.length > 0)) return 0.2; 
+
+            if (norm1 === norm2) return 1.0;
+            if (norm1.length < 2 || norm2.length < 2) return 0;
+
+            let bigrams1 = [];
+            for (let i = 0; i < norm1.length - 1; i++) bigrams1.push(norm1.substring(i, i + 2));
+            let bigrams2 = [];
+            for (let i = 0; i < norm2.length - 1; i++) bigrams2.push(norm2.substring(i, i + 2));
+
+            let intersection = 0;
+            let usedIndexes = new Set();
+            
+            for (let i = 0; i < bigrams1.length; i++) {
+                for (let j = 0; j < bigrams2.length; j++) {
+                    if (bigrams1[i] === bigrams2[j] && !usedIndexes.has(j)) {
+                        intersection++;
+                        usedIndexes.add(j);
+                        break;
+                    }
+                }
+            }
+
+            return (2.0 * intersection) / (bigrams1.length + bigrams2.length);
+        }
+
+        // --- 3. Processing ---
+
+        function processComparison() {
+            document.getElementById('loadingState').classList.remove('hidden');
+            
+            setTimeout(() => {
+                const threshold = parseInt(similarityRange.value) / 100;
+                comparisonResults = [];
+                let countExact = 0;
+                let countProbable = 0;
+                let countUnique = 0;
+
+                const getVal = (row, keys) => {
+                    if (!row) return '';
+                    for (let k of keys) {
+                        const rowKey = Object.keys(row).find(rk => rk.toUpperCase().includes(k));
+                        if (rowKey) return row[rowKey];
+                    }
+                    return '';
+                };
+
+                const getPrice = (row) => {
+                    if (!row) return 0;
+                    const val = getVal(row, ['PRECO', 'PREÇO', 'VALOR']);
+                    return typeof val === 'number' ? val : parseFloat(val) || 0;
+                };
+
+                const dataA = fileAData;
+                const dataB = fileBData; 
+
+                dataA.forEach(itemA => {
+                    const descA = getVal(itemA, ['DESC', 'PRODUTO']) || '';
+                    const marcaA = getVal(itemA, ['MARCA', 'FABRICANTE']) || '';
+                    const refA = getVal(itemA, ['REF', 'COD', 'SERVIÇO', 'SERV']) || '';
+                    const priceA = getPrice(itemA);
+
+                    let bestMatch = null;
+                    let bestScore = 0;
+
+                    // Busca em B
+                    dataB.forEach((itemB) => {
+                        const marcaB = getVal(itemB, ['MARCA', 'FABRICANTE']) || '';
+                        
+                        if (marcaA && marcaB) {
+                            const brandScore = getSimilarity(marcaA, marcaB);
+                            if (brandScore < 0.6) return; 
+                        }
+
+                        const descB = getVal(itemB, ['DESC', 'PRODUTO']) || '';
+                        const score = getSimilarity(descA, descB);
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMatch = itemB;
+                        }
+                    });
+
+                    if (bestScore >= threshold) {
+                        const descB = getVal(bestMatch, ['DESC', 'PRODUTO']);
+                        const refB = getVal(bestMatch, ['REF', 'COD', 'SERVIÇO', 'SERV']);
+                        const priceB = getPrice(bestMatch);
+                        
+                        let status = bestScore >= 0.95 ? 'EXATO' : 'PROVÁVEL';
+                        if(status === 'EXATO') countExact++; else countProbable++;
+
+                        const normA = normalizeString(descA);
+                        const normB = normalizeString(descB);
+
+                        comparisonResults.push({
+                            status: status,
+                            score: Math.round(bestScore * 100),
+                            prodA: descA,
+                            refA: refA,
+                            priceA: priceA,
+                            prodB: descB,
+                            refB: refB,
+                            priceB: priceB,
+                            debug: `Madville (Norm): "${normA}" \nCuritiba (Norm): "${normB}"`
+                        });
+                    } else {
+                        countUnique++;
+                        comparisonResults.push({
+                            status: 'ÚNICO',
+                            score: 0,
+                            prodA: descA,
+                            refA: refA,
+                            priceA: priceA,
+                            prodB: '-',
+                            refB: '-',
+                            priceB: 0
+                        });
+                    }
+                });
+
+                comparisonResults.sort((a, b) => b.score - a.score);
+
+                renderResults();
+                
+                document.getElementById('statExact').innerText = countExact;
+                document.getElementById('statProbable').innerText = countProbable;
+                document.getElementById('statUnique').innerText = countUnique;
+                document.getElementById('statsBox').classList.remove('hidden');
+                document.getElementById('btnExport').classList.remove('hidden');
+
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('resultsContainer').classList.remove('hidden');
+
+            }, 200);
+        }
+
+        function renderResults() {
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+
+            const displayLimit = 2000; 
+            const dataToShow = comparisonResults.slice(0, displayLimit);
+
+            dataToShow.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 border-b border-slate-100 transition-colors group';
+                tr.title = row.debug || ''; 
+                
+                let badgeClass = '';
+                if(row.status === 'EXATO') badgeClass = 'status-exact';
+                else if(row.status === 'PROVÁVEL') badgeClass = 'status-high';
+                else badgeClass = 'status-unique';
+
+                let diffHtml = '-';
+                if (row.priceA > 0 && row.priceB > 0) {
+                    const diff = ((row.priceB - row.priceA) / row.priceA) * 100;
+                    const color = diff > 0 ? 'text-red-500' : 'text-emerald-500';
+                    const icon = diff > 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                    diffHtml = `<span class="${color} font-bold flex items-center justify-end gap-1"><i class="fa-solid ${icon} text-[10px]"></i> ${Math.abs(diff).toFixed(1)}%</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td class="px-4 py-2 text-center">
+                        <span class="${badgeClass} text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider cursor-help" title="${row.debug}">${row.status}</span>
+                    </td>
+                    <td class="px-4 py-2 border-r border-slate-100 relative">
+                        <div class="font-medium text-slate-700 text-xs">${row.prodA}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">${row.refA}</div>
+                    </td>
+                    <td class="px-4 py-2 relative">
+                        <div class="font-medium text-slate-700 text-xs">${row.prodB}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">${row.refB}</div>
+                    </td>
+                    <td class="px-4 py-2 text-center text-xs font-bold text-slate-500">
+                        ${row.score > 0 ? row.score + '%' : '-'}
+                    </td>
+                    <td class="px-4 py-2 text-right font-mono text-xs text-slate-600">
+                        ${row.priceA ? row.priceA.toLocaleString('pt-BR', {minimumFractionDigits: 2}) : '-'}
+                    </td>
+                    <td class="px-4 py-2 text-right font-mono text-xs text-slate-600">
+                        ${row.priceB ? row.priceB.toLocaleString('pt-BR', {minimumFractionDigits: 2}) : '-'}
+                    </td>
+                    <td class="px-4 py-2 text-right text-xs">
+                        ${diffHtml}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportResults() {
+            const cleanData = comparisonResults.map(r => ({
+                Status: r.status,
+                'Score (%)': r.score,
+                'Madville - Produto': r.prodA,
+                'Madville - Ref': r.refA,
+                'Madville - Preço': r.priceA,
+                'Curitiba - Produto': r.prodB,
+                'Curitiba - Ref': r.refB,
+                'Curitiba - Preço': r.priceB
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(cleanData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Comparativo");
+            XLSX.writeFile(workbook, "Comparativo_GMAD.xlsx");
+        }
+
+    </script>
+</body>
+</html>
